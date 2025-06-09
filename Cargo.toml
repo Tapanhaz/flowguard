@@ -1,6 +1,6 @@
 [package]
 name = "flowguard"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Tapanhaz <tapanhaz@yahoo.com>"]
 description = "Rate limiting library for Python with sync/async support"
