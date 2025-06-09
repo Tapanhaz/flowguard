@@ -1,0 +1,28 @@
+[package]
+name = "flowguard"
+version = "0.1.1"
+edition = "2021"
+authors = ["Tapanhaz <tapanhaz@yahoo.com>"]
+description = "Rate limiting library for Python with sync/async support"
+license = "MIT"
+homepage = "https://github.com/Tapanhaz/flowguard"
+repository = "https://github.com/Tapanhaz/flowguard"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "flowguard"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.25.0", features = ["extension-module", "abi3-py38", "experimental-async", "generate-import-lib"] }
+pyo3-async-runtimes = { version = "0.25.0", features = ["tokio-runtime"] }
+tokio = { version = "1.45.1", features = ["full"] }
+pyo3-macros = "0.25.0"
+serde = "1.0.219"
+chrono = "0.4.41"
+libc = "0.2.172"
+
+[profile.release]
+opt-level = 3 
+strip = true  
+lto = true
