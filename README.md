@@ -9,6 +9,7 @@ hours, days) and optional burst limits.
 * Burst Limiting: Optional maximum burst capacity to control maximum concurrent requests.
 * Thread-Safe and Interruptible: Built with atomic operations and mutexes for safe concurrent use.
 * Context Manager Support: For automatic resource management.
+* Use as a Decorator: For clean and concise rate limiting.
 
 ## Installation
 Flowguard is available as a Python package. Install it using pip:
@@ -25,6 +26,73 @@ Ensure you have a compatible Python version (3.8 or higher) installed.
 * max_burst: Optional maximum number of concurrent permits allowed.
 
 ## Usage
+
+### Asynchronous Rate Limiter Example :: 
+
+```python
+import asyncio
+import logging
+from flowguard import AsyncRateLimiter
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s.%(msecs)03d %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+logger = logging.getLogger(__name__)
+
+
+async def explicit_example(i, limiter):
+    await limiter.acquire()
+    logger.info(f"Permit acquired for {i}")
+    # Simulate work 
+    await asyncio.sleep(1)
+    await limiter.release()
+
+async def context_manager_example(i, limiter):
+    async with limiter:
+        logger.info(f"Permit acquired for {i}")
+
+@AsyncRateLimiter(sec=5, max_burst=3, sec_window= 2)
+async def decorator_example(i):
+    logger.info(f"Permit acquired for {i}")
+
+async def main():
+    limiter = AsyncRateLimiter(sec=10)
+
+    print("\n", "Explicit Example".center(60, "="), "\n")
+    explicit_tasks = [
+        explicit_example(i, limiter) 
+        for i in range(15)  
+    ]
+
+    await asyncio.gather(*explicit_tasks)
+
+    print("\n", "Context Manager Example".center(60, "="), "\n")
+    burst_limiter = AsyncRateLimiter(sec=5, max_burst=3, sec_window= 2)
+    
+    burst_tasks = [
+        context_manager_example(f"burst-{i}", burst_limiter)
+        for i in range(15)  
+    ]
+    
+    await asyncio.gather(*burst_tasks)
+
+    print("\n", "Decorator Example".center(60, "="), "\n")
+    
+    tasks = [
+        decorator_example(i) for i in range(15)  
+    ]
+    
+    await asyncio.gather(*tasks)
+    
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+```
+
 ### Synchronous Rate Limiter Example :: 
 
 ```python
@@ -67,6 +135,12 @@ def explicit_example(i, limiter):
         # Simulate work
         sleep(1)
         limiter.release()
+
+@RateLimiter(sec=3, min=5, sec_window=3, max_burst=2)
+def decorator_example(i):
+    logger.info(f"Permit acquired for {i}")
+    # Simulate work
+    sleep(1)
 
 def main():
     # This will create a ratelimiter instance with 3 req/2 sec and 15 req/min with a max allowed concurrent req = 2
@@ -114,63 +188,22 @@ def main():
     
     for t in threads:
         t.join()
+    
+    print("\n", "Using as a Decorator".center(60, "="), "\n")
+
+    threads = []
+
+    for i in range(30):
+        t = threading.Thread(target=decorator_example, args=(i, ), daemon= True)
+        threads.append(t)
+        t.start()
+    
+    for t in threads:
+        t.join()
 
 if __name__ == "__main__":
     main()
 
-
-```
-### Asynchronous Rate Limiter Example :: 
-
-```python
-import asyncio
-import logging
-from flowguard import AsyncRateLimiter
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s.%(msecs)03d %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger(__name__)
-
-
-async def explicit_example(i, limiter):
-    await limiter.acquire()
-    logger.info(f"Permit acquired for {i}")
-    # Simulate work 
-    await asyncio.sleep(1)
-    await limiter.release()
-
-async def context_manager_example(i, limiter):
-    async with limiter:
-        logger.info(f"Permit acquired for {i}")
-
-async def main():
-    limiter = AsyncRateLimiter(sec=10)
-
-    print("\n", "Explicit Example".center(60, "="), "\n")
-    explicit_tasks = [
-        explicit_example(i, limiter) 
-        for i in range(15)  
-    ]
-
-    await asyncio.gather(*explicit_tasks)
-
-    print("\n", "Context Manager Example".center(60, "="), "\n")
-    burst_limiter = AsyncRateLimiter(sec=5, max_burst=3, sec_window= 2)
-    
-    burst_tasks = [
-        context_manager_example(f"burst-{i}", burst_limiter)
-        for i in range(15)  
-    ]
-    
-    await asyncio.gather(*burst_tasks)
-    
-
-if __name__ == "__main__":
-    asyncio.run(main())
 
 ```
 

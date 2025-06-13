@@ -1,32 +1,34 @@
 use pyo3::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use pyo3::exceptions::PyValueError;
 use chrono::{DateTime, Timelike, Utc};
-use pyo3_async_runtimes::tokio::future_into_py;
+use pyo3::types::{PyDict, PyTuple, PyCFunction};
 use tokio::time::{sleep, Duration as TokioDuration};
 use std::sync::atomic::{AtomicBool, Ordering, AtomicU64};
+use pyo3::exceptions::{PyValueError, PyKeyboardInterrupt};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use pyo3_async_runtimes::tokio::{future_into_py, into_future};
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TimeWindow {
     limit: u64,
     window_duration_secs: u64,
-    current_count: AtomicU64,
-    window_start: AtomicU64,
+    current_count: Arc<AtomicU64>,
+    window_start: Arc<AtomicU64>,
     limit_type: String
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AsyncTimeWindow {
     limit: u64,
     window_duration_secs: u64,
-    current_count: AtomicU64,
-    window_start: AtomicU64,
+    current_count: Arc<AtomicU64>,
+    window_start: Arc<AtomicU64>,
     limit_type: String
 }
 
+#[derive(Clone)]
 #[pyclass]
 pub struct RateLimiter {
     windows: Arc<Mutex<Vec<TimeWindow>>>,
@@ -36,6 +38,7 @@ pub struct RateLimiter {
     current_burst_count: Arc<AtomicU64>,    
 }
 
+#[derive(Clone)]
 #[pyclass]
 pub struct AsyncRateLimiter {
     windows: Arc<Mutex<Vec<AsyncTimeWindow>>>,
@@ -94,8 +97,8 @@ impl TimeWindow {
         Self {
             limit,
             window_duration_secs,
-            current_count: AtomicU64::new(0),
-            window_start: AtomicU64::new(0), 
+            current_count: Arc::new(AtomicU64::new(0)),
+            window_start: Arc::new(AtomicU64::new(0)), 
             limit_type
         }
     }
@@ -221,8 +224,8 @@ impl AsyncTimeWindow {
         Self {
             limit,
             window_duration_secs,
-            current_count: AtomicU64::new(0),
-            window_start: AtomicU64::new(0), 
+            current_count: Arc::new(AtomicU64::new(0)),
+            window_start: Arc::new(AtomicU64::new(0)), 
             limit_type
         }
     }
@@ -442,7 +445,7 @@ impl RateLimiter {
                 if burst_acquired {
                     self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                 }
-                Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"))
+                Err(PyKeyboardInterrupt::new_err("Operation interrupted"))
             }
         }
     }
@@ -457,7 +460,7 @@ impl RateLimiter {
                 if burst_acquired {
                     self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                 }
-                return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+                return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
             }
 
             if let Some(max_burst) = self.max_burst_limit {
@@ -485,7 +488,7 @@ impl RateLimiter {
                     if !burst_acquired {
                         let backoff_ms = (2u64.saturating_pow(attempt.min(6).try_into().unwrap()) * 10).min(100);
                         if let Err(_) = interruptible_sleep(Duration::from_millis(backoff_ms), &self.interrupted) {
-                            return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+                            return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
                         }
                         attempt = attempt.saturating_add(1);
                         continue;
@@ -519,7 +522,7 @@ impl RateLimiter {
                     if burst_acquired {
                         self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                     }
-                    return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+                    return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
                 }
             }
             
@@ -531,7 +534,7 @@ impl RateLimiter {
                     if burst_acquired {
                         self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                     }
-                    return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+                    return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
                 }
             } else {
                 let backoff_ms = (2u64.saturating_pow(attempt.min(6).try_into().unwrap()) * 10).min(100);
@@ -539,7 +542,7 @@ impl RateLimiter {
                     if burst_acquired {
                         self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                     }
-                    return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+                    return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
                 }
             }
             
@@ -648,7 +651,7 @@ impl AsyncRateLimiter {
                 if burst_acquired {
                     self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                 }
-                Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"))
+                Err(PyKeyboardInterrupt::new_err("Operation interrupted"))
             }
         }
     }
@@ -663,7 +666,7 @@ impl AsyncRateLimiter {
                 if burst_acquired {
                     self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                 }
-                return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+                return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
             }
     
             if let Some(max_burst) = self.max_burst_limit {
@@ -722,7 +725,7 @@ impl AsyncRateLimiter {
                         if burst_acquired {
                             self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
                         }
-                        return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+                        return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
                     }
                 }
             };
@@ -760,9 +763,9 @@ impl RateLimiter {
         hour_window=None, 
         day_window=None, 
         blocking=true, 
-        max_burst=None
-    ))]
-    fn new(
+        max_burst=None)
+    )]
+    fn __new__(
         sec: Option<u64>,
         min: Option<u64>, 
         hour: Option<u64>,
@@ -796,6 +799,57 @@ impl RateLimiter {
         })
     }
 
+    fn __enter__(&self, py: Python<'_>) -> PyResult<()> {
+        self.interrupted.store(false, Ordering::SeqCst);
+        
+        if !self.acquire(py)? {  
+            return Err(PyValueError::new_err("Failed to acquire permit"));
+        }
+        Ok(())
+    }
+
+    fn __exit__(
+        &self,
+        _exc_type: Option<&Bound<'_, PyAny>>,
+        _exc_value: Option<&Bound<'_, PyAny>>,
+        _traceback: Option<&Bound<'_, PyAny>>
+    ) -> PyResult<bool> {
+        if self.max_burst_limit.is_some() {
+            self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
+        }
+        Ok(false)
+    }
+
+    fn __call__(&self, py: Python<'_>, func: PyObject) -> PyResult<PyObject> {
+        let limiter = self.clone();
+
+        let wrapper = move |args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<PyObject> {
+            let py = args.py();
+            
+            limiter.interrupted.store(false, Ordering::SeqCst);
+            
+            if !limiter.acquire(py)? {  
+                return Err(PyValueError::new_err("Failed to acquire permit"));
+            }
+
+            let func_bound = func.bind(py);
+            let result = if let Some(kw) = kwargs {
+                func_bound.call(args, Some(kw))
+            } else {
+                func_bound.call(args, None)
+            };
+
+            if limiter.max_burst_limit.is_some() {
+                let _ = limiter.release();
+            }
+
+            result.map(|bound| bound.into())
+        };
+
+        let py_wrapper = PyCFunction::new_closure(py, None, None, wrapper)?;
+        Ok(py_wrapper.into())
+    }
+
     fn acquire(&self, py: Python<'_>) -> PyResult<bool> {  
         self.interrupted.store(false, Ordering::SeqCst);    
         
@@ -812,12 +866,11 @@ impl RateLimiter {
         let signal = py.check_signals();
         if signal.is_err() {
             self.interrupted.store(true, Ordering::SeqCst);
-            return Err(pyo3::exceptions::PyKeyboardInterrupt::new_err("Operation interrupted"));
+            return Err(PyKeyboardInterrupt::new_err("Operation interrupted"));
         }
         
         result 
     }
-    
 
     fn release(&self) -> PyResult<()> {
         if self.max_burst_limit.is_some() {
@@ -845,28 +898,7 @@ impl RateLimiter {
 
     fn wait_time(&self) -> PyResult<Option<f64>> {
         Ok(self.compute_wait_duration().map(|d| d.as_secs_f64()))
-    }
-
-    fn __enter__(&self, py: Python<'_>) -> PyResult<()> {
-        self.interrupted.store(false, Ordering::SeqCst);
-        
-        if !self.acquire(py)? {  
-            return Err(PyValueError::new_err("Failed to acquire permit"));
-        }
-        Ok(())
-    }
-
-    fn __exit__(
-        &self,
-        _exc_type: Option<&Bound<'_, PyAny>>,
-        _exc_value: Option<&Bound<'_, PyAny>>,
-        _traceback: Option<&Bound<'_, PyAny>>
-    ) -> PyResult<bool> {
-        if self.max_burst_limit.is_some() {
-            self.current_burst_count.fetch_sub(1, Ordering::AcqRel);
-        }
-        Ok(false)
-    }
+    }    
 }
 
 #[pymethods]
@@ -884,7 +916,7 @@ impl AsyncRateLimiter {
         blocking=true, 
         max_burst=None
     ))]
-    fn new(
+    fn __new__(
         sec: Option<u64>,
         min: Option<u64>, 
         hour: Option<u64>,
@@ -916,6 +948,131 @@ impl AsyncRateLimiter {
             max_burst_limit: max_burst,
             current_burst_count: Arc::new(AtomicU64::new(0))
         })
+    }
+
+    fn __aenter__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.interrupted.store(false, Ordering::SeqCst);
+        
+        let limiter = Arc::new(self.clone());
+        future_into_py(py, async move {
+            let _ = (
+                if limiter.blocking_mode {
+                    limiter.acquire_with_backoff_async().await
+                } else {
+                    limiter.try_acquire_limits_async().await
+                }
+            )?.ok_or_else(|| PyValueError::new_err("Failed to acquire permit"))?;
+
+            Ok(())
+        })
+    }
+
+    fn __aexit__<'p>(
+        &self,
+        py: Python<'p>,
+        _exc_type: Option<&Bound<'_, PyAny>>,
+        _exc_value: Option<&Bound<'_, PyAny>>,
+        _traceback: Option<&Bound<'_, PyAny>>
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let limiter = Arc::new(self.clone());
+        future_into_py(py, async move {
+            if limiter.max_burst_limit.is_some() {
+                limiter.current_burst_count.fetch_sub(1, Ordering::AcqRel);
+            }
+            Ok(false)
+        })
+    }
+
+    fn __call__<'a>(&self, py: Python<'a>, func: PyObject) -> PyResult<Bound<'a, PyAny>> {
+        let limiter = Arc::new(self.clone());
+        
+        let wrapper_func = PyCFunction::new_closure(
+            py,
+            None,
+            None,
+            move |args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<PyObject> {
+                let py = args.py();
+                let limiter = limiter.clone();
+                let func = func.clone_ref(py);
+                
+                let args_tuple: Vec<PyObject> = (0..args.len())
+                    .map(|i| args.get_item(i).unwrap().into())
+                    .collect();
+                let kwargs_dict: Option<HashMap<String, PyObject>> = kwargs.map(|kw| {
+                    let mut map = HashMap::new();
+                    for item in kw.items() {
+                        if let Ok((key, value)) = item.extract::<(String, PyObject)>() {
+                            map.insert(key, value);
+                        }
+                    }
+                    map
+                });
+                
+                future_into_py(py, async move {
+                    let acquire_result = if limiter.blocking_mode {
+                        limiter.acquire_with_backoff_async().await
+                    } else {
+                        limiter.try_acquire_limits_async().await
+                    };
+                    
+                    match acquire_result? {
+                        Some(_) => {
+                            let result: Py<PyAny> = Python::with_gil(|py| {
+                                let func_bound = func.bind(py);
+                                
+                                let args_py = PyTuple::new(py, &args_tuple)?;
+                                let kwargs_py = kwargs_dict.as_ref().map(|kw| {
+                                    let dict = PyDict::new(py);
+                                    for (k, v) in kw {
+                                        dict.set_item(k, v).unwrap();
+                                    }
+                                    dict
+                                });
+                                
+                                let call_result = if let Some(kwargs) = kwargs_py.as_ref() {
+                                    func_bound.call(&args_py, Some(kwargs))
+                                } else {
+                                    func_bound.call(&args_py, None)
+                                };
+                                
+                                call_result.map(|bound| bound.into())
+                            })?;
+                            
+                            let final_result: Result<Option<_>, PyErr>  = Python::with_gil(|py| {
+                                let result_bound = result.bind(py);
+                                
+                                if result_bound.hasattr("__await__").unwrap_or(false) {
+                                    let future_coro = into_future(result_bound.clone())?;
+                                    Ok(Some(future_coro))
+                                } else {
+                                    Ok(None)
+                                }
+                            });
+                            
+                            let final_result = match final_result? {
+                                Some(future_coro) => {
+                                    future_coro.await?
+                                }
+                                None => {
+                                    result
+                                }
+                            };
+                            
+                            if limiter.max_burst_limit.is_some() {
+                                limiter.current_burst_count.fetch_sub(1, Ordering::AcqRel);
+                            }
+                            
+                            Ok(final_result)
+                        }
+                        None => {
+                            Err(PyValueError::new_err("Rate limit exceeded"))
+                        }
+                    }
+                }).map(|bound| bound.into())
+            }
+        )?;
+        
+        Ok(wrapper_func.into_any())
     }
 
     fn acquire<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
@@ -969,53 +1126,10 @@ impl AsyncRateLimiter {
         future_into_py(py, async move {
             Ok(limiter.compute_wait_duration().map(|d| d.as_secs_f64()))
         })
-    }
-
-    fn __aenter__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.interrupted.store(false, Ordering::SeqCst);
-        
-        let limiter = Arc::new(self.clone());
-        future_into_py(py, async move {
-            let _ = (
-                if limiter.blocking_mode {
-                    limiter.acquire_with_backoff_async().await
-                } else {
-                    limiter.try_acquire_limits_async().await
-                }
-            )?.ok_or_else(|| PyValueError::new_err("Failed to acquire permit"))?;
-
-            Ok(())
-        })
-    }
-
-    fn __aexit__<'p>(
-        &self,
-        py: Python<'p>,
-        _exc_type: Option<&Bound<'_, PyAny>>,
-        _exc_value: Option<&Bound<'_, PyAny>>,
-        _traceback: Option<&Bound<'_, PyAny>>
-    ) -> PyResult<Bound<'p, PyAny>> {
-        let limiter = Arc::new(self.clone());
-        future_into_py(py, async move {
-            if limiter.max_burst_limit.is_some() {
-                limiter.current_burst_count.fetch_sub(1, Ordering::AcqRel);
-            }
-            Ok(false)
-        })
-    }
+    }    
+    
 }
 
-impl Clone for AsyncRateLimiter {
-    fn clone(&self) -> Self {
-        Self {
-            windows: Arc::clone(&self.windows),
-            blocking_mode: self.blocking_mode,
-            interrupted: Arc::clone(&self.interrupted),
-            max_burst_limit: self.max_burst_limit,
-            current_burst_count: Arc::clone(&self.current_burst_count)
-        }
-    }
-}
 
 #[pymodule]
 fn flowguard(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
