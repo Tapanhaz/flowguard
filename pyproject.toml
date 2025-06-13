@@ -5,8 +5,11 @@ build-backend = "maturin"
 [project]
 name = "flowguard"
 requires-python = ">=3.8"
-version = "0.1.2" 
+version = "0.1.3" 
 readme = "README.md"
+dependencies = [
+    'typing_extensions ==4.14.0 ; python_version < "3.10"'
+]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",

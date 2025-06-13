@@ -1,6 +1,20 @@
-
 from contextlib import contextmanager
-from typing import Optional, Dict, Any, Awaitable
+from typing import (
+Awaitable,
+Callable,
+Optional,
+TypeVar,
+Dict,
+Any
+)
+
+try:
+    from typing import ParamSpec
+except ImportError:
+    from typing_extensions import ParamSpec
+
+P = ParamSpec("P") 
+R = TypeVar("R")
 
 class RateLimiter:
     def __init__(
@@ -32,6 +46,25 @@ class RateLimiter:
             blocking: If True, blocks until a permit is acquired; if False, returns immediately.
         """
         ...
+    
+    def __enter__(self) -> None:
+        """
+        Enter a context manager, acquiring a permit.
+
+        In non-blocking mode, this raises a ValueError if no permit is available. In blocking
+        mode, it waits until a permit is acquired.
+
+        """
+        ...
+
+    def __exit__(self, exc_type: Optional[Any], exc_value: Optional[Any], traceback: Optional[Any]) -> bool:
+        """
+        Exit a context manager,
+
+        """
+        ...
+    
+    def __call__(self, func: Callable[P, R]) -> Callable[P, R]: ...
 
     def acquire(self) -> bool:
         """
@@ -73,22 +106,7 @@ class RateLimiter:
         """
         ...
 
-    def __enter__(self) -> None:
-        """
-        Enter a context manager, acquiring a permit.
-
-        In non-blocking mode, this raises a ValueError if no permit is available. In blocking
-        mode, it waits until a permit is acquired.
-
-        """
-        ...
-
-    def __exit__(self, exc_type: Optional[Any], exc_value: Optional[Any], traceback: Optional[Any]) -> bool:
-        """
-        Exit a context manager,
-
-        """
-        ...
+    
 
 
 class AsyncRateLimiter:
@@ -121,6 +139,25 @@ class AsyncRateLimiter:
             blocking: If True, blocks until a permit is acquired; if False, returns immediately.
         """
         ...
+    
+    async def __aenter__(self) -> None:
+        """
+        Enter an async context manager, acquiring a permit.
+
+        In non-blocking mode, this raises a ValueError if no permit is available. In blocking
+        mode, it waits until a permit is acquired.
+
+        """
+        ...
+
+    async def __aexit__(self, exc_type: Optional[Any], exc_value: Optional[Any], traceback: Optional[Any]) -> bool:
+        """
+        Exit an async context manager.
+
+        """
+        ...
+    
+    def __call__(self, func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]: ...
 
     def acquire(self) -> Awaitable[bool]:
         """
@@ -162,19 +199,4 @@ class AsyncRateLimiter:
         """
         ...
 
-    async def __aenter__(self) -> None:
-        """
-        Enter an async context manager, acquiring a permit.
-
-        In non-blocking mode, this raises a ValueError if no permit is available. In blocking
-        mode, it waits until a permit is acquired.
-
-        """
-        ...
-
-    async def __aexit__(self, exc_type: Optional[Any], exc_value: Optional[Any], traceback: Optional[Any]) -> bool:
-        """
-        Exit an async context manager.
-
-        """
-        ...
+    
